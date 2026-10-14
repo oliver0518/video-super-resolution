@@ -115,8 +115,8 @@ if sys.platform == "darwin":
         info_plist={
             "CFBundleName": "秋白超分",
             "CFBundleDisplayName": "秋白超分",
-            "CFBundleShortVersionString": "1.0.0",
-            "CFBundleVersion": "1",
+            "CFBundleShortVersionString": "1.0.7",
+            "CFBundleVersion": "7",
             "NSHighResolutionCapable": True,
             "LSApplicationCategoryType": "public.app-category.video",
             "LSMinimumSystemVersion": "11.0",
