@@ -1238,6 +1238,17 @@ if __name__ == "__main__":
                 return False
             try:
                 window.events.closing += on_closing
+                # !! 关键 !!
+                # pywebview 的 Event.set() 默认 should_lock=False，会把 callback
+                # 扔到新线程异步跑，然后**立刻**检查 return_values —— 这导致：
+                #   - on_closing 返回的 False（hide 路径）经常被 race 吃掉
+                #   - set() 永远返回 False → should_close 返回 YES → 关窗
+                #   - 但 is the user picking Quit？applicationShouldTerminate_ 走
+                #     pywebview should_close 时 race 让结果不稳定，有时退有时不出。
+                # 改成 should_lock=True 后，execute() 同步跑，return_values 正确填入，
+                # false_values 检查准确，on_closing 的 True/False 决定权有效。
+                window.events.closing._should_lock = True
+                log.debug("window.events.closing set to lock=True (synchronous)")
             except Exception as e:
                 log.warning("set closing handler failed: %s", e)
 
