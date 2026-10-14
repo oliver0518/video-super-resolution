@@ -1,0 +1,143 @@
+name: Build Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:    # 允许手动触发
+
+# 默认 GITHUB_TOKEN 只有读权限；softprops/action-gh-release 需要写权限才能创建/编辑 release。
+# 这里给最小写权限：contents (写 tag/release) + packages (写 package)
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            archive_name: VideoSuperRes-1.0.0-macOS.dmg
+          - os: ubuntu-latest
+            archive_name: VideoSuperRes-1.0.0-linux.tar.gz
+          - os: windows-latest
+            archive_name: VideoSuperRes-1.0.0-windows.zip
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      # 平台特定：准备 ffmpeg/ffprobe 二进制到项目根（spec 引用 ffmpeg / ffmpeg.exe）
+      - name: Prepare ffmpeg (macOS)
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          brew install ffmpeg
+          cp "$(which ffmpeg)" ffmpeg
+          cp "$(which ffprobe)" ffprobe
+
+      - name: Prepare ffmpeg (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          cp "$(which ffmpeg)" ffmpeg
+          cp "$(which ffprobe)" ffprobe
+
+      - name: Prepare ffmpeg (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          choco install -y ffmpeg
+          FFMPEG_PATH="$(which ffmpeg)"
+          FFPROBE_PATH="$(which ffprobe)"
+          cp "$FFMPEG_PATH" ffmpeg.exe
+          cp "$FFPROBE_PATH" ffprobe.exe
+
+      # (可选) 准备 Real-ESRGAN ncnn-vulkan：直接跳过也行，App 会自动 fallback 到 ffmpeg lanczos
+      - name: Prepare Real-ESRGAN ncnn (optional)
+        shell: bash
+        run: |
+          mkdir -p bin
+          echo "Real-ESRGAN ncnn binary not bundled; app auto-fallbacks to ffmpeg lanczos"
+          echo "To enable AI super-resolution, manually download from:"
+          echo "  https://github.com/xinntao/Real-ESRGAN/releases"
+          echo "  place into bin/realesrgan-ncnn-vulkan (or .exe on Windows)"
+
+      # PyInstaller：cwd 保持项目根，spec 在 packaging/ 下，相对路径从 spec 解析
+      # 强制 bash shell——Windows runner 默认是 PowerShell，会把 --noconfirm 解析为 -- 运算符
+      - name: PyInstaller build
+        shell: bash
+        run: |
+          pyinstaller \
+            --noconfirm \
+            --clean \
+            --distpath dist \
+            --workpath packaging/build \
+            packaging/video-superres.spec
+
+      # macOS: 给 .app 加 ad-hoc 签名（统一 Python.framework / dylib / .app 的 Team ID）
+      # Team ID 不匹配时 macOS 拒绝 dlopen Python，提示 "different Team IDs"
+      # --deep 会自动重签所有内层
+      - name: Codesign (macOS ad-hoc, unified Team ID)
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          codesign --force --deep --sign - --timestamp=none dist/VideoSuperRes.app
+          codesign -dv --verbose=2 dist/VideoSuperRes.app 2>&1 | grep -E "Identifier|Signature" | head -5
+
+      # 平台特定：打包成最终分发格式
+      - name: Package (macOS DMG)
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          mkdir -p dmg-staging
+          cp -R dist/VideoSuperRes.app dmg-staging/
+          ln -s /Applications dmg-staging/Applications
+          hdiutil create -volname "秋白超分 1.0.0" \
+            -srcfolder dmg-staging \
+            -ov -format UDZO \
+            ${{ matrix.archive_name }}
+
+      - name: Package (Linux tarball)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          tar czf ${{ matrix.archive_name }} -C dist VideoSuperRes/
+
+      - name: Package (Windows zip)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/VideoSuperRes -DestinationPath ${{ matrix.archive_name }}
+
+      - name: Upload release assets
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.archive_name }}
+          fail_on_unmatched_files: false
+
+      - name: Upload workflow artifacts (debug)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.archive_name }}
+          path: ${{ matrix.archive_name }}
+          if-no-files-found: ignore
