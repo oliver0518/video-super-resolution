@@ -130,3 +130,20 @@ bash packaging/make_dmg.sh
 ## 📜 许可
 
 MIT License — 详见 [LICENSE](./LICENSE) 文件。
+
+## 🍎 macOS 首次启动
+
+如果从 **下载的 DMG** 把 .app 拖到 Applications 后**双击闪退**，是 macOS Gatekeeper 在拦（developer 未签名）。解决：
+
+```bash
+# 方案 A：右键打开（首次）
+# 在 Finder → 找到 .app → 右键 → 打开 → 「打开」
+
+# 方案 B：清除隔离属性（脚本/CI 常用）
+xattr -dr com.apple.quarantine /Applications/VideoSuperRes.app
+
+# 方案 C：系统设置
+# 系统设置 → 隐私与安全性 → 向下滚到刚被阻止的 app → 「仍要打开」
+```
+
+日志：`~/Library/Logs/VideoSuperRes.log`

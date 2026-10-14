@@ -1184,34 +1184,61 @@ if __name__ == "__main__":
                     _AppDelegate = getattr(cocoa_platform, "AppDelegate", None) \
                                    or getattr(cocoa_platform, "_AppDelegate", None)
                     if _AppDelegate is not None:
-                        def _keep_alive(self, _sender):
-                            return False
-                        import objc
-                        objc.classAddMethod(
-                            _AppDelegate,
-                            b"applicationShouldTerminateAfterLastWindowClosed:",
-                            _keep_alive,
-                        )
-                except Exception as e:
-                    log.warning("patch AppDelegate failed: %s", e)
-                try:
-                    from Foundation import (
-                        NSNotificationCenter,
-                        NSApplicationDidBecomeActiveNotification,
-                    )
-                    from AppKit import NSApp
-
-                    def _on_active(_notification):
+                        # 1) 阻止 NSApp 在所有 window 关闭时退出
                         try:
-                            if window.hidden:
-                                window.show()
-                                NSApp.activateIgnoringOtherApps_(True)
-                        except Exception:
-                            pass
-                    NSNotificationCenter.defaultCenter().addObserverForName_object_queue_usingBlock_(
-                        NSApplicationDidBecomeActiveNotification,
-                        None, None, _on_active,
-                    )
+                            def _keep_alive(self, _sender):
+                                return False
+                            import objc
+                            objc.classAddMethod(
+                                _AppDelegate,
+                                b"applicationShouldTerminateAfterLastWindowClosed:",
+                                _keep_alive,
+                            )
+                            log.info("AppDelegate patched: keep alive after window close")
+                        except Exception as e:
+                            log.warning("patch AppDelegate (keep alive) failed: %s", e)
+                        # 2) Dock 点击重新显示窗口 —— 必须用 applicationShouldHandleReopen:hasVisibleWindows:
+                        #    否则之前用的 NSApplicationDidBecomeActiveNotification 在 app 没退出的情况下不会触发
+                        try:
+                            from AppKit import NSApp
+                            def _reopen_has_windows(self, _sender, _flag):
+                                try:
+                                    window.show()
+                                    NSApp.activateIgnoringOtherApps_(True)
+                                except Exception as exc:
+                                    log.warning("reopen show failed: %s", exc)
+                                return True
+                            import objc as _objc
+                            _objc.classAddMethod(
+                                _AppDelegate,
+                                b"applicationShouldHandleReopen:hasVisibleWindows:",
+                                _reopen_has_windows,
+                            )
+                            log.info("AppDelegate patched: Dock click reopens window")
+                        except Exception as e:
+                            log.warning("patch AppDelegate (reopen) failed: %s", e)
+
+                    # 兜底：监听 NSApplicationDidBecomeActiveNotification（用户切换前台时同步）
+                    try:
+                        from Foundation import (
+                            NSNotificationCenter,
+                            NSApplicationDidBecomeActiveNotification,
+                        )
+                        from AppKit import NSApp
+
+                        def _on_active(_notification):
+                            try:
+                                if window.hidden:
+                                    window.show()
+                                    NSApp.activateIgnoringOtherApps_(True)
+                            except Exception:
+                                pass
+                        NSNotificationCenter.defaultCenter().addObserverForName_object_queue_usingBlock_(
+                            NSApplicationDidBecomeActiveNotification,
+                            None, None, _on_active,
+                        )
+                    except Exception as e:
+                        log.warning("became-active observer failed: %s", e)
                 except Exception as e:
                     log.warning("macOS Dock handler setup failed: %s", e)
 
