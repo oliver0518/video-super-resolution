@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>秋白超分</title>
+  <link rel="stylesheet" href="static/main.css">
+</head>
+<body>
+  <header class="app-bar">
+    <div class="brand">
+      <span class="brand-dot">超</span>
+      <span>秋白超分</span>
+    </div>
+    <nav class="app-nav" id="app-nav">
+      <button data-view="home" class="nav-btn active">主页</button>
+      <button data-view="history" class="nav-btn">历史<span class="nav-badge" id="history-count">0</span></button>
+    </nav>
+    <span class="pill" id="backend-pill">本地处理 · 隐私安全</span>
+  </header>
+
+  <div class="app">
+    <div class="title-row">
+      <h1>视频 / 图片超分</h1>
+      <p class="sub">本地处理 · ffmpeg 高清放大 · 可选 Real-ESRGAN 增强</p>
+    </div>
+
+    <!-- 主页：上传 + 队列 -->
+    <section class="card" id="step-upload">
+      <h2><span class="step-num">1</span> 选择文件</h2>
+      <div id="dropzone" class="dropzone">
+        <div class="dz-icon">🎬</div>
+        <p class="dz-text">拖拽视频 / 图片到这里，或 <span class="link">点击选择</span></p>
+        <p class="dz-hint">支持 MP4 / MOV / AVI / MKV / WEBM / PNG / JPG · 可多选批量</p>
+      </div>
+      <input type="file" id="file-input" accept="video/*,image/*" hidden multiple>
+      <div id="upload-status" class="status hidden"></div>
+
+      <!-- 队列 -->
+      <div id="queue-wrap" class="queue-wrap hidden">
+        <div class="queue-toolbar">
+          <span class="queue-title" id="queue-title">0 个文件</span>
+          <span class="queue-progress" id="queue-progress"></span>
+          <div class="queue-actions">
+            <button id="btn-batch-process" type="button" class="primary" disabled><span class="ico">▶</span> 开始生成</button>
+            <button id="btn-save-all" type="button" disabled><span class="ico">⤓</span> 全部下载</button>
+            <button id="btn-queue-clear" type="button" class="danger"><span class="ico">🗑</span> 清空</button>
+          </div>
+        </div>
+        <div class="queue-settings">
+          <label>算法
+            <select id="method">
+              <option value="ffmpeg" selected>ffmpeg 高清（lanczos）</option>
+              <option value="realesrgan">Real-ESRGAN（需下载）</option>
+            </select>
+          </label>
+          <label>放大倍数
+            <select id="scale">
+              <option value="2" selected>2x</option>
+              <option value="3">3x</option>
+              <option value="4">4x</option>
+            </select>
+          </label>
+        </div>
+        <ul class="queue-list" id="queue-list"></ul>
+      </div>
+    </section>
+
+    <!-- 历史 -->
+    <section class="card hidden" id="step-history">
+      <div class="row-spread">
+        <h2 style="margin-bottom:0"><span class="step-num">📁</span> 历史记录</h2>
+        <div>
+          <button id="btn-history-save-all" type="button" disabled><span class="ico">⤓</span> 全部下载</button>
+        </div>
+      </div>
+      <p class="hint" id="history-page-hint">所有处理过的文件都在这里</p>
+      <ul class="history-list" id="history-list"></ul>
+      <p class="history-empty" id="history-empty">暂无历史记录</p>
+    </section>
+  </div>
+
+  <div class="toast-host" id="toast-host"></div>
+
+  <!-- 预览模态框（A/B 对比：原始 ↔ 超分） -->
+  <div id="preview-modal" class="modal hidden" aria-hidden="true">
+    <div class="modal-mask" data-close></div>
+    <div class="modal-body compare-modal-body">
+      <button class="modal-close" data-close aria-label="关闭">×</button>
+
+      <div class="compare-caption" id="preview-caption"></div>
+
+      <!-- 图片模式 -->
+      <div class="compare-images hidden" id="compare-images">
+        <div class="cmp-side">
+          <div class="cmp-label">原始</div>
+          <img id="cmp-img-orig" alt="原始" />
+        </div>
+        <div class="cmp-arrow" aria-hidden="true">→</div>
+        <div class="cmp-side">
+          <div class="cmp-label">超分后</div>
+          <img id="cmp-img-out" alt="超分后" />
+        </div>
+      </div>
+
+      <!-- 视频模式（共用播放控件） -->
+      <div class="compare-videos hidden" id="compare-videos">
+        <div class="cmp-side">
+          <div class="cmp-label">原始</div>
+          <video id="cmp-video-orig" playsinline preload="metadata" muted></video>
+        </div>
+        <div class="cmp-arrow" aria-hidden="true">→</div>
+        <div class="cmp-side">
+          <div class="cmp-label">超分后</div>
+          <video id="cmp-video-out" playsinline preload="metadata" muted></video>
+        </div>
+      </div>
+
+      <!-- 共享播放控件（视频模式显示） -->
+      <div class="compare-controls hidden" id="compare-controls">
+        <button id="cmp-play" class="cmp-play-btn" aria-label="播放/暂停">
+          <span id="cmp-play-icon">▶</span>
+        </button>
+        <span id="cmp-time" class="cmp-time">00:00 / 00:00</span>
+        <input type="range" id="cmp-seek" class="cmp-seek" min="0" max="1000" value="0" step="0.1" />
+      </div>
+    </div>
+  </div>
+
+  <script src="static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.swp
+.DS_Store
+.idea/
+.vscode/
+
+# PyInstaller
+build/
+dist/
+*.spec.bak
+
+# Runtime outputs (kept out of repo)
+uploads/
+output/
+logs/
+thumbnails/
+history.json
+ffmpeg
+ffprobe
+
+# Local dev scripts
+_test_e2e.py
+
+# Real-ESRGAN ncnn-vulkan's bundled sample assets (not needed for the app)
+bin/input*.jpg
+bin/onepiece_demo.mp4
+bin/README_macos.md
+
+# Allow these to be committed (needed for the app / build)
+!packaging/video-superres.spec
+!bin/realesrgan-ncnn-vulkan
+!bin/models/
