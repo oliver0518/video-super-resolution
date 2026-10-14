@@ -1283,38 +1283,26 @@ if __name__ == "__main__":
                         #    返回 NSTerminateNow (=1)
                         #
                         # !! 关键 !!
-                        # pywebview 的 AppDelegate 已经实现了 applicationShouldTerminate_，
-                        # objc.classAddMethod 在 selector 已存在时是 no-op（不报错但也不生效）。
-                        # 所以必须用「Python subclass + setDelegate_ swap」才能真正覆盖。
+                        # pywebview 在 ``webview.start()`` 内创建 BrowserView，随后会把
+                        # BrowserView._shared_app_delegate 重新设为 NSApp.delegate。
+                        # 在此之前直接 NSApp.setDelegate_ 会被覆盖，Quit 又会走回
+                        # pywebview 默认的 should_close -> on_closing -> hide 路径。
+                        # 因此替换 pywebview 将要实例化的 delegate 类，而不是替换当前
+                        # NSApp 的 delegate 实例。
                         try:
-                            import Foundation as _Foundation_mod
-                            YES = _Foundation_mod.YES
+                            from AppKit import NSTerminateNow
 
                             class _QuittingAppDelegate(_AppDelegate):
-                                """Subclass of pywebview's AppDelegate that actually quits.
-
-                                pywebview 默认 implementationShouldTerminate_ 会调用
-                                BrowserView.should_close() 跑 on_closing，而 on_closing
-                                被设计成「hide 窗口」（X 按钮行为），导致 Quit 路径被吃掉。
-                                我们直接返回 NSTerminateNow，跳过 should_close：
-                                      - _app_is_quitting 标志置位 → on_closing 看到会放行
-                                      - 应用直接走 terminate 流程，窗口全部关闭
-                                """
+                                """Delegate pywebview creates when its Cocoa window starts."""
                                 def applicationShouldTerminate_(self, app):
                                     _app_is_quitting[0] = True
                                     log.info("applicationShouldTerminate → user quit, allowing")
-                                    return YES
+                                    return NSTerminateNow
 
-                            # 用 subclass 实例替换 NSApp 的 delegate
-                            from AppKit import NSApp as _NSApp
-                            new_delegate = _QuittingAppDelegate.alloc().init()
-                            if new_delegate is not None:
-                                _NSApp.setDelegate_(new_delegate)
-                                log.info("AppDelegate patched: subclass overrides applicationShouldTerminate_")
-                            else:
-                                log.warning("AppDelegate subclass alloc/init returned None")
+                            cocoa_platform.BrowserView.AppDelegate = _QuittingAppDelegate
+                            log.info("AppDelegate patched before BrowserView instantiation")
                         except Exception as e:
-                            log.warning("patch AppDelegate (should_terminate via subclass) failed: %s", e)
+                            log.warning("patch AppDelegate class (should_terminate) failed: %s", e)
 
                         # 3) Dock 点击重新显示窗口 —— 必须用 applicationShouldHandleReopen:hasVisibleWindows:
                         #    否则之前用的 NSApplicationDidBecomeActiveNotification 在 app 没退出的情况下不会触发
