@@ -21,11 +21,11 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            archive_name: VideoSuperRes-1.0.7-macOS.dmg
+            archive_name: VideoSuperRes-1.0.0-macOS.dmg
           - os: ubuntu-latest
-            archive_name: VideoSuperRes-1.0.7-linux.tar.gz
+            archive_name: VideoSuperRes-1.0.0-linux.tar.gz
           - os: windows-latest
-            archive_name: VideoSuperRes-1.0.7-windows.zip
+            archive_name: VideoSuperRes-1.0.0-windows.zip
 
     steps:
       - uses: actions/checkout@v4
@@ -110,7 +110,7 @@ jobs:
           mkdir -p dmg-staging
           cp -R dist/VideoSuperRes.app dmg-staging/
           ln -s /Applications dmg-staging/Applications
-          hdiutil create -volname "秋白超分 1.0.7" \
+          hdiutil create -volname "秋白超分 1.0.0" \
             -srcfolder dmg-staging \
             -ov -format UDZO \
             ${{ matrix.archive_name }}
