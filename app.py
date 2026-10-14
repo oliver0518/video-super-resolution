@@ -1244,8 +1244,13 @@ if __name__ == "__main__":
             if sys.platform == "darwin":
                 try:
                     import webview.platforms.cocoa as cocoa_platform
-                    _AppDelegate = getattr(cocoa_platform, "AppDelegate", None) \
-                                   or getattr(cocoa_platform, "_AppDelegate", None)
+                    # pywebview 4+ 把 AppDelegate 嵌在 BrowserView 类里，
+                    # 不是模块顶层。先查顶层，找不到再查 BrowserView。
+                    _AppDelegate = (
+                        getattr(cocoa_platform, "AppDelegate", None)
+                        or getattr(cocoa_platform, "_AppDelegate", None)
+                        or getattr(getattr(cocoa_platform, "BrowserView", None), "AppDelegate", None)
+                    )
                     if _AppDelegate is not None:
                         import objc
 
@@ -1265,19 +1270,40 @@ if __name__ == "__main__":
                         # 2) 用户主动 Quit (Cmd+Q / Dock 右击「退出」/ 菜单) →
                         #    设置 _app_is_quitting 让 on_closing 真的关闭 window
                         #    返回 NSTerminateNow (=1)
+                        #
+                        # !! 关键 !!
+                        # pywebview 的 AppDelegate 已经实现了 applicationShouldTerminate_，
+                        # objc.classAddMethod 在 selector 已存在时是 no-op（不报错但也不生效）。
+                        # 所以必须用「Python subclass + setDelegate_ swap」才能真正覆盖。
                         try:
-                            from AppKit import NSApp
-                            def _should_terminate(self, _sender):
-                                _app_is_quitting[0] = True
-                                log.info("applicationShouldTerminate → user quit, allowing")
-                                return 1
-                            objc.classAddMethod(
-                                _AppDelegate,
-                                b"applicationShouldTerminate:",
-                                _should_terminate,
-                            )
+                            import Foundation as _Foundation_mod
+                            YES = _Foundation_mod.YES
+
+                            class _QuittingAppDelegate(_AppDelegate):
+                                """Subclass of pywebview's AppDelegate that actually quits.
+
+                                pywebview 默认 implementationShouldTerminate_ 会调用
+                                BrowserView.should_close() 跑 on_closing，而 on_closing
+                                被设计成「hide 窗口」（X 按钮行为），导致 Quit 路径被吃掉。
+                                我们直接返回 NSTerminateNow，跳过 should_close：
+                                      - _app_is_quitting 标志置位 → on_closing 看到会放行
+                                      - 应用直接走 terminate 流程，窗口全部关闭
+                                """
+                                def applicationShouldTerminate_(self, app):
+                                    _app_is_quitting[0] = True
+                                    log.info("applicationShouldTerminate → user quit, allowing")
+                                    return YES
+
+                            # 用 subclass 实例替换 NSApp 的 delegate
+                            from AppKit import NSApp as _NSApp
+                            new_delegate = _QuittingAppDelegate.alloc().init()
+                            if new_delegate is not None:
+                                _NSApp.setDelegate_(new_delegate)
+                                log.info("AppDelegate patched: subclass overrides applicationShouldTerminate_")
+                            else:
+                                log.warning("AppDelegate subclass alloc/init returned None")
                         except Exception as e:
-                            log.warning("patch AppDelegate (should_terminate) failed: %s", e)
+                            log.warning("patch AppDelegate (should_terminate via subclass) failed: %s", e)
 
                         # 3) Dock 点击重新显示窗口 —— 必须用 applicationShouldHandleReopen:hasVisibleWindows:
                         #    否则之前用的 NSApplicationDidBecomeActiveNotification 在 app 没退出的情况下不会触发
