@@ -1,5 +1,7 @@
 # 秋白超分
 
+<img src="packaging/icon-256.png" width="128" align="right" alt="秋白超分 logo">
+
 > 本地视频 / 图片无损超分工具（支持 AI 模型 + ffmpeg lanczos）·  苹果风格 UI ·  跨平台单文件安装包
 
 **秋白超分** 是一款完全本地运行的视频与图片超分辨率（Super-Resolution）工具。无需上传任何文件，所有处理都在你本机完成。
