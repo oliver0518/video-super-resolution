@@ -41,6 +41,35 @@ logging.basicConfig(
 )
 log = logging.getLogger("video-superres")
 
+# ---------- Single-instance helpers ----------
+import socket
+from urllib.request import Request, urlopen
+
+
+def _another_instance_alive(host="127.0.0.1", port=8400, timeout=1.5):
+    """探测 localhost:port 是否已被另一实例 bind/listen。
+    用 connect 而不是尝试 bind，避开权限问题并允许短超时。
+    """
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _signal_existing_instance(host="127.0.0.1", port=8400, timeout=3):
+    """向已存在的实例发 /api/show，让它把窗口拉前台。
+    失败也无所谓 —— 老实例可能刚启动还没注册路由，或对方不是本 app。
+    """
+    try:
+        req = Request(f"http://{host}:{port}/api/show", method="GET")
+        urlopen(req, timeout=timeout).read()
+        return True
+    except Exception as e:
+        log.warning("signal existing instance failed: %s", e)
+        return False
+
+
 BASE = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.join(BASE, "uploads")
 OUTPUT_DIR = os.path.join(BASE, "output")
@@ -1030,6 +1059,31 @@ def api_backend():
     })
 
 
+@app.route("/api/show")
+def api_show():
+    """Single-instance focus: 另一实例启动后调这里，把当前窗口拉前台。
+
+    Cocoa UI 操作必须在主线程 (NSApp run loop) 上做；
+    从 Flask worker thread 通过 PyObjCTools.AppHelper.callAfter 派发回主线程。
+    """
+    from PyObjCTools.AppHelper import callAfter
+
+    def _focus():
+        try:
+            from AppKit import NSApp
+            NSApp.activateIgnoringOtherApps_(True)
+            for w in NSApp.windows():
+                try:
+                    w.makeKeyAndOrderFront_(None)
+                except Exception:
+                    pass
+        except Exception as e:
+            log.warning("api_show focus failed: %r", e)
+
+    callAfter(_focus)
+    return jsonify({"ok": True})
+
+
 # ---------- 错误处理 ----------
 
 @app.errorhandler(413)
@@ -1049,6 +1103,14 @@ if __name__ == "__main__":
 
     log.info("starting video-superres on http://%s:%d (frozen=%s, realesrgan=%s)",
              host, port, getattr(sys, "frozen", False), bool(REALESRGAN))
+
+    # Single-instance：端口被占说明老进程还活着（窗口可能因 hide 看不见）。
+    # 给老进程发 /api/show 把窗口拉前台，然后干净退出，避免 Address-already-in-use 闪退。
+    if _another_instance_alive(host, port):
+        log.info("another instance already running on %s:%d — signaling & quitting",
+                 host, port)
+        _signal_existing_instance(host, port)
+        sys.exit(0)
 
     if getattr(sys, "frozen", False):
         from werkzeug.serving import make_server
